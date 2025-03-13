@@ -4,8 +4,6 @@ services:
     container_name: url_shortener-backend
     build: 
       context: ./backend
-      dockerfile: Dockerfile
-      target: final
     ports:
       - "8000:8000"
     env_file:
