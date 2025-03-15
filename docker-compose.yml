@@ -1,5 +1,6 @@
 services:
   backend:
+    image: url_shortener
     pull_policy: never
     container_name: url_shortener-backend
     build: 
@@ -14,6 +15,8 @@ services:
   db:
     image: mongo:latest
     container_name: url_shortener-mongodb
+    ports:
+      - "27017:27017"
     volumes:
       - db-data:/data/db
     env_file:

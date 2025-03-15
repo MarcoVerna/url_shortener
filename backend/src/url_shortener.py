@@ -1,12 +1,19 @@
-from motor.motor_asyncio import AsyncIOMotorClient
 import os
+import sys
+
+# Allow running as a script directly by setting _package_ properly.
+if __name__ == "__main__" and __package__ is None:
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    __package__ = "src"
+
 import argparse
 import datetime
-
+import pymongo
+from pymongo import MongoClient
+from .ShortCodeDispenser import ShortCodeDispenser
 
 MONGODB_CONNECTION_STRING = os.environ.get("MONGODB_CONNECTION_STRING")
-
-client = AsyncIOMotorClient(MONGODB_CONNECTION_STRING, uuidRepresentation="standard")
+client = MongoClient(MONGODB_CONNECTION_STRING)
 db = client["url_shortener"]
 
 
@@ -23,6 +30,15 @@ class UrlMapping():
         self.created_at = created_at
         self.expiration_seconds = expiration_seconds
 
+    def to_dict(self):
+        return {
+            "long_url": self.long_url,
+            "short_code": self.short_code,
+            "created_at": self.created_at,
+            "expiration_seconds": self.expiration_seconds
+        }
+
+
 class Response():
     url: UrlMapping
     message: str
@@ -33,7 +49,12 @@ class Response():
 
 
 def minifyUrl(db, long_url, expiration_seconds):
-    pass
+    short_code = ShortCodeDispenser(db).get_next()
+    mapping = UrlMapping(long_url, short_code, datetime.datetime.now(datetime.UTC), expiration_seconds)
+    db.urls.insert_one(mapping.to_dict())
+    
+    response = Response(mapping, f"Shortened URL: https://myurlshortener.com/{short_code}")
+    return response
 
 def expandUrl(db, short_code):
     pass
