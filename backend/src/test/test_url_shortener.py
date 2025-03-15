@@ -1,60 +1,110 @@
-import datetime
+from datetime import datetime
 import pytest
 import mongomock
 from pymongo import MongoClient
-from ..url_shortener import minifyUrl, expandUrl, UrlMapping
+from ..url_shortener import main, minifyUrl, expandUrl, UrlMapping, SHORTENED_URL_PREFIX
+
+TESTING_LONG_URL = "https://www.example.com/path?q=search"
+TESTING_SHORT_URL = f"{SHORTENED_URL_PREFIX}3"
+
+@pytest.fixture
+def expectedMapping():
+    return UrlMapping(TESTING_LONG_URL,'3',datetime(2025, 3, 14, 12, 30),5)
 
 @pytest.fixture(scope='function')
-#@pytest.fixture(autouse=True)
 def test_db():
     client = mongomock.MongoClient()
     test_db = client["url_shortener"]
     return test_db
 
-@pytest.fixture
-def expected():
-    return UrlMapping("https://www.example.com/path?q=search","3",'',5)
+def test_message_no_args():
+    inputUrl = TESTING_LONG_URL
 
-
-def test_minify(test_db, expected):
-    inputUrl = expected.long_url
+    response = main()
+    assert response.message == "Please provide either --minify or --expand parameter."
+    
+def test_minify(test_db, expectedMapping):
+    inputUrl = TESTING_LONG_URL
 
     response = minifyUrl(test_db, inputUrl, 5)
-    dbRecord =  test_db.urls.find_one({"long_url": inputUrl})
+    dbRecord = test_db.urls.find_one({"long_url": inputUrl})
 
-    assert response.url.short_code == expected.short_code
-    assert response.message == "Shortened URL: https://myurlshortener.com/3"
+    assert response.url == TESTING_SHORT_URL
+    assert response.message == f"Shortened URL: {TESTING_SHORT_URL}"
+    assert response.mapping.short_code == expectedMapping.short_code
     # db assertions
     assert test_db.urls.count_documents({}) == 1
-    assert dbRecord["short_code"] == response.url.short_code
+    assert dbRecord["short_code"] == response.mapping.short_code
 
-def test_expand():
-    assert False
+def test_minify_multiple_differents_urls_gives_different_codes(test_db):
+    inputUrl1 = TESTING_LONG_URL
+    inputUrl2 = f"{TESTING_LONG_URL}2"
 
-def test_minify_and_expand():
-    assert False
+    response1 = minifyUrl(test_db, inputUrl1, 5)
+    response2 = minifyUrl(test_db, inputUrl2, 5)
+    dbRecord1 = test_db.urls.find_one({"long_url": inputUrl1})
+    dbRecord2 = test_db.urls.find_one({"long_url": inputUrl2})
 
-def test_expand_not_found():
-    assert False
+    assert response1.url == TESTING_SHORT_URL
+    assert response1.message == f"Shortened URL: {TESTING_SHORT_URL}"
+    assert response2.url == f"{SHORTENED_URL_PREFIX}4"
+    assert response2.message == f"Shortened URL: {SHORTENED_URL_PREFIX}4"
+    # db assertions
+    assert test_db.urls.count_documents({}) == 2
+    assert dbRecord1["short_code"] == response1.mapping.short_code
+    assert dbRecord2["short_code"] == response2.mapping.short_code
 
-def test_expand_already_expanded():
-    assert False
+def test_minify_already_exist(test_db):
+    inputUrl = TESTING_LONG_URL
+    
+    first_response = minifyUrl(test_db, inputUrl, 5)
+    second_response = minifyUrl(test_db, inputUrl, 5)
+    dbRecord =  test_db.urls.find_one({"long_url": inputUrl})
 
-def test_minify_already_exist():
+    assert second_response.url == TESTING_SHORT_URL
+    assert second_response.message == f"Shortened URL: {TESTING_SHORT_URL}"
+    # db assertions
+    assert test_db.urls.count_documents({}) == 1
+    assert dbRecord["short_code"] == second_response.mapping.short_code
+
+def test_expand(test_db, expectedMapping):
+    test_db.urls.insert_one(expectedMapping.to_dict())
+    inputUrl = TESTING_SHORT_URL
+
+    response = expandUrl(test_db, inputUrl)
+    
+    assert response.url == TESTING_LONG_URL
+    assert response.message == f"Original URL: {TESTING_LONG_URL}"
+    assert response.mapping.long_url == TESTING_LONG_URL
+
+def test_expand_not_found(test_db):
+    inputUrl = TESTING_SHORT_URL
+
+    response = expandUrl(test_db, inputUrl)
+    
+    assert response.url == ""
+    assert response.message == "Error: Shortened URL does not exist or has expired."
+    assert response.mapping == None
+
+def test_minify_and_expand(test_db):
+    inputUrl = TESTING_LONG_URL
+
+    minifyResponse = minifyUrl(test_db, inputUrl, 5)
+    short_url = minifyResponse.url
+
+    expandResponse = expandUrl(test_db, short_url)
+    long_url = expandResponse.url
+    
+    dbRecord = test_db.urls.find_one({"long_url": inputUrl})
+
+    assert inputUrl == long_url
+    # db assertions
+    assert test_db.urls.count_documents({}) == 1
+    assert dbRecord["long_url"] == inputUrl
+    assert dbRecord["short_code"] == expandResponse.mapping.short_code
+
+def test_expired_url():
     assert False
 
 def test_minify_already_exist_but_expired():
-    assert False
-
-def test_minify_multiple(expected):
-    #mapping = {
-    #    "long_url": '',
-    #    "short_code": 'aaa',
-    #    "created_at": '',
-    #    "expiration_seconds": 5
-    #}
-    #test_db.urls.results.insert_one(mapping)
-    assert False
-
-def test_expired_url():
     assert False

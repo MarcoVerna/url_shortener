@@ -13,6 +13,7 @@ from pymongo import MongoClient
 from .ShortCodeDispenser import ShortCodeDispenser
 
 MONGODB_CONNECTION_STRING = os.environ.get("MONGODB_CONNECTION_STRING")
+SHORTENED_URL_PREFIX = "https://myurlshortener.com/"
 client = MongoClient(MONGODB_CONNECTION_STRING)
 db = client["url_shortener"]
 
@@ -38,26 +39,52 @@ class UrlMapping():
             "expiration_seconds": self.expiration_seconds
         }
 
+    def from_dict(data):
+        return UrlMapping(
+            data["long_url"],
+            data["short_code"],
+            data["created_at"],
+            data["expiration_seconds"]
+        )
 
 class Response():
-    url: UrlMapping
+    url: str
     message: str
-
-    def __init__(self, url: UrlMapping, message: str):
+    mapping: UrlMapping
+    
+    def __init__(self, url: str = "", message: str = "", mapping: UrlMapping = None):
         self.url = url
         self.message = message
+        self.mapping = mapping
 
 
 def minifyUrl(db, long_url, expiration_seconds):
-    short_code = ShortCodeDispenser(db).get_next()
-    mapping = UrlMapping(long_url, short_code, datetime.datetime.now(datetime.UTC), expiration_seconds)
-    db.urls.insert_one(mapping.to_dict())
-    
-    response = Response(mapping, f"Shortened URL: https://myurlshortener.com/{short_code}")
-    return response
+    now = datetime.datetime.now(datetime.UTC)
+    alreadyExisting = db.urls.find_one({"long_url": long_url})
 
-def expandUrl(db, short_code):
-    pass
+    if alreadyExisting:
+        short_code = alreadyExisting["short_code"]
+        mapping = UrlMapping.from_dict(alreadyExisting)
+    else:
+        short_code = ShortCodeDispenser(db).get_next()
+        mapping = UrlMapping(long_url, short_code, datetime.datetime.now(datetime.UTC), expiration_seconds)
+        db.urls.insert_one(mapping.to_dict())
+    
+    short_url = f"{SHORTENED_URL_PREFIX}{short_code}"
+    return Response(short_url, f"Shortened URL: {short_url}", mapping)
+
+def expandUrl(db, short_url):
+    now = datetime.datetime.now(datetime.UTC)
+    short_code = short_url.rstrip('/').split('/')[-1]
+    urlFound = db.urls.find_one({"short_code": short_code})
+
+    if not urlFound:
+        return Response('', "Error: Shortened URL does not exist or has expired.", None)
+
+    long_url = urlFound["long_url"]
+    mapping = UrlMapping.from_dict(urlFound)
+
+    return Response(long_url, f"Original URL: {long_url}", mapping)
 
 def main():
     parser = argparse.ArgumentParser(description="URL Shortener Tool")
@@ -71,9 +98,10 @@ def main():
     elif args.expand:
         response = expandUrl(db, args.expand)
     else:
-        response = Response(None,"Please provide either --minify or --expand parameter.")
+        response = Response('',"Please provide either --minify or --expand parameter.", None)
     
     print(response.message)
+    return response
 
 if __name__ == "__main__":
     main()
