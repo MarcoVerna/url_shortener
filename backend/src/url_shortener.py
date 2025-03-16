@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 import os
 import sys
 
@@ -86,12 +87,7 @@ def expandUrl(db, short_url):
         created_at = urlFound["created_at"]
         expiration_seconds = urlFound["expiration_seconds"]
 
-        print('TULULULU')
-        print(now)
-        print(created_at + datetime.timedelta(seconds=expiration_seconds))
-
         if created_at + datetime.timedelta(seconds=expiration_seconds) >= now:
-            print('BAKAKAKA')
             long_url = urlFound["long_url"]
             mapping = UrlMapping.from_dict(urlFound)
             return Response(long_url, f"Original URL: {long_url}", mapping)
