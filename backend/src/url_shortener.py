@@ -60,7 +60,11 @@ class Response():
 
 def minifyUrl(db, long_url, expiration_seconds):
     now = datetime.datetime.now(datetime.UTC)
-    alreadyExisting = db.urls.find_one({"long_url": long_url})
+    validity_window = now - datetime.timedelta(seconds=expiration_seconds)
+    alreadyExisting = db.urls.find_one({
+        "long_url": long_url,
+        "created_at": {"$gte": validity_window}
+        })
 
     if alreadyExisting:
         short_code = alreadyExisting["short_code"]
@@ -74,17 +78,25 @@ def minifyUrl(db, long_url, expiration_seconds):
     return Response(short_url, f"Shortened URL: {short_url}", mapping)
 
 def expandUrl(db, short_url):
-    now = datetime.datetime.now(datetime.UTC)
+    now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
     short_code = short_url.rstrip('/').split('/')[-1]
     urlFound = db.urls.find_one({"short_code": short_code})
 
-    if not urlFound:
-        return Response('', "Error: Shortened URL does not exist or has expired.", None)
+    if urlFound:
+        created_at = urlFound["created_at"]
+        expiration_seconds = urlFound["expiration_seconds"]
 
-    long_url = urlFound["long_url"]
-    mapping = UrlMapping.from_dict(urlFound)
+        print('TULULULU')
+        print(now)
+        print(created_at + datetime.timedelta(seconds=expiration_seconds))
 
-    return Response(long_url, f"Original URL: {long_url}", mapping)
+        if created_at + datetime.timedelta(seconds=expiration_seconds) >= now:
+            print('BAKAKAKA')
+            long_url = urlFound["long_url"]
+            mapping = UrlMapping.from_dict(urlFound)
+            return Response(long_url, f"Original URL: {long_url}", mapping)
+
+    return Response('', "Error: Shortened URL does not exist or has expired.", None)
 
 def main():
     parser = argparse.ArgumentParser(description="URL Shortener Tool")
